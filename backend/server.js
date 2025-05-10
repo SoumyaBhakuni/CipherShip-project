@@ -1,64 +1,88 @@
-const express = require('express');
-const dotenv = require('dotenv');
-const cors = require('cors');
-const helmet = require('helmet');
+/**
+ * Cipher Ship API Server
+ * Entry point for the backend application
+ */
+
+const app = require('./src/app');
+const http = require('http');
+const socketIo = require('socket.io');
 const connectDB = require('./src/config/db');
-const { errorHandler } = require('./src/middleware/errorHandler');
 const logger = require('./src/utils/logger');
+const { PORT } = require('./src/config/constants');
 
-// Load environment variables
-dotenv.config();
-
-// Connect to database
-connectDB();
-
-const app = express();
-
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-
-// Routes
-app.use('/api/auth', require('./src/routes/auth'));
-app.use('/api/users', require('./src/routes/users'));
-app.use('/api/packages', require('./src/routes/packages'));
-app.use('/api/qrcodes', require('./src/routes/qrCodes'));
-app.use('/api/tracking', require('./src/routes/tracking'));
-
-// Error handler
-app.use(errorHandler);
-
-const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  logger.info(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-});
-
-// Socket.io setup
-const io = require('socket.io')(server, {
+// Create HTTP server and attach Socket.IO
+const server = http.createServer(app);
+const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
-  },
+    credentials: true
+  }
 });
 
+// Socket.IO connection handling
 io.on('connection', (socket) => {
-  logger.info('New client connected');
+  logger.info(`Socket connected: ${socket.id}`);
   
-  // Join room based on user ID
-  socket.on('join', (userId) => {
-    socket.join(userId);
+  // Handle client joining a package tracking room
+  socket.on('join-package-tracking', (packageId) => {
+    logger.info(`Client ${socket.id} joined package tracking for ${packageId}`);
+    socket.join(`package-${packageId}`);
   });
   
+  // Handle client leaving a package tracking room
+  socket.on('leave-package-tracking', (packageId) => {
+    logger.info(`Client ${socket.id} left package tracking for ${packageId}`);
+    socket.leave(`package-${packageId}`);
+  });
+  
+  // Handle disconnection
   socket.on('disconnect', () => {
-    logger.info('Client disconnected');
+    logger.info(`Socket disconnected: ${socket.id}`);
   });
+});
+
+// Make io accessible to our routes
+app.set('io', io);
+
+// Start the server
+const startServer = async () => {
+  try {
+    // Connect to MongoDB
+    await connectDB();
+    
+    // Start HTTP server
+    server.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT}`);
+      logger.info(`Environment: ${process.env.NODE_ENV}`);
+    });
+  } catch (error) {
+    logger.error(`Failed to start server: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  logger.error(`UNCAUGHT EXCEPTION: ${err.message}`);
+  logger.error(err.stack);
+  process.exit(1);
 });
 
 // Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
-  logger.error(`Error: ${err.message}`);
-  // Close server & exit process
-  server.close(() => process.exit(1));
+process.on('unhandledRejection', (err) => {
+  logger.error(`UNHANDLED REJECTION: ${err.message}`);
+  logger.error(err.stack);
+  process.exit(1);
 });
+
+// Handle SIGTERM signal
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received. Shutting down gracefully');
+  server.close(() => {
+    logger.info('Process terminated');
+  });
+});
+
+// Start the server
+startServer();
