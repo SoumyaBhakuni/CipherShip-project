@@ -11,7 +11,10 @@ const logger = require('./src/utils/logger');
 const { PORT } = require('./src/config/constants');
 
 // Create HTTP server and attach Socket.IO
-const server = http.createServer(app);
+const server = app.listen(PORT, () => {
+  logger.info(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+});
+
 const io = socketIo(server, {
   cors: {
     origin: process.env.CLIENT_URL || 'http://localhost:3000',
@@ -83,6 +86,3 @@ process.on('SIGTERM', () => {
     logger.info('Process terminated');
   });
 });
-
-// Start the server
-startServer();

@@ -13,6 +13,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
+const mongoose = require('mongoose');
 const logger = require('./utils/logger');
 
 // Import routes
@@ -21,6 +22,20 @@ const userRoutes = require('./routes/users');
 const packageRoutes = require('./routes/packages');
 const qrCodeRoutes = require('./routes/qrCodes');
 const trackingRoutes = require('./routes/tracking');
+
+// Load environment variables
+require('dotenv').config();
+
+// Connect to MongoDB Atlas
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => logger.info('MongoDB Atlas connected'))
+.catch((err) => {
+  logger.error('MongoDB connection error:', err);
+  process.exit(1);
+});
 
 // Load passport configuration
 require('./config/passport');
